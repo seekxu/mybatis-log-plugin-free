@@ -7,7 +7,6 @@ import org.jetbrains.annotations.NotNull;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.project.DumbAwareAction;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.Disposer;
 import com.starxg.mybatislog.gui.MyBatisLogManager;
 
 /**
@@ -43,10 +42,6 @@ public class MyBatisLogAction extends DumbAwareAction {
     }
 
     public void rerun(final Project project) {
-        final MyBatisLogManager manager = MyBatisLogManager.getInstance(project);
-        if (Objects.nonNull(manager)) {
-            Disposer.dispose(manager);
-        }
-        MyBatisLogManager.createInstance(project).run();
+        MyBatisLogManager.recreateInstance(project).run();
     }
 }

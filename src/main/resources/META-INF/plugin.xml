@@ -11,8 +11,8 @@
 	<br/>
 	<b>usage:</>
 	<ol>
-		<li>Click Tool -> MyBatis Log Free</li>
-		<li>Click MyBatis Log Free in the console</li>
+		<li>Click the MyBatis Log icon in the bottom tool window</li>
+		<li>Or click Tools -> MyBatis Log Plugin</li>
 	</ol>
     <a href="https://github.com/starxg/mybatis-log-plugin-free">github</a> | <a href="https://github.com/starxg/mybatis-log-plugin-free/issues">issues</a> | <a href="https://ko-fi.com/huangxingguang">donate</a>
     ]]></description>
@@ -20,10 +20,14 @@
 	<depends>com.intellij.modules.platform</depends>
 
 	<extensions defaultExtensionNs="com.intellij">
-		<!-- Add your extensions here -->
+		<!-- Extension: filter for console output -->
 		<consoleFilterProvider implementation="com.starxg.mybatislog.MyBatisLogConsoleFilterProvider"/>
-		<executor implementation="com.starxg.mybatislog.gui.MyBatisLogExecutor"
-				  id="MyBatisLogFreeExecutor"/>
+
+		<!-- ToolWindow: fixed at bottom, click icon to open -->
+		<toolWindow id="MyBatis Log Plugin Free"
+					anchor="bottom"
+					icon="/icons/ibatis.svg"
+					factoryClass="com.starxg.mybatislog.gui.MyBatisLogToolWindowFactory"/>
 	</extensions>
 
 	<actions>

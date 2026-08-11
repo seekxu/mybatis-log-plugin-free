@@ -1,21 +1,13 @@
 package com.starxg.mybatislog.gui;
 
-import com.intellij.execution.DefaultExecutionResult;
-import com.intellij.execution.ExecutionManager;
-import com.intellij.execution.Executor;
-import com.intellij.execution.configurations.RunProfile;
-import com.intellij.execution.configurations.RunProfileState;
 import com.intellij.execution.filters.TextConsoleBuilder;
 import com.intellij.execution.filters.TextConsoleBuilderFactory;
 import com.intellij.execution.impl.ConsoleViewImpl;
-import com.intellij.execution.runners.ExecutionEnvironment;
-import com.intellij.execution.ui.ConsoleView;
 import com.intellij.execution.ui.ConsoleViewContentType;
-import com.intellij.execution.ui.RunContentDescriptor;
-import com.intellij.execution.ui.RunnerLayoutUi;
 import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.Disposable;
-import com.intellij.openapi.actionSystem.ActionGroup;
+import com.intellij.openapi.actionSystem.ActionManager;
+import com.intellij.openapi.actionSystem.ActionToolbar;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.DefaultActionGroup;
 import com.intellij.openapi.editor.Document;
@@ -36,6 +28,7 @@ import com.intellij.openapi.wm.ToolWindowManager;
 import com.intellij.openapi.wm.ex.ToolWindowManagerListener;
 import com.intellij.ui.JBColor;
 import com.intellij.ui.content.Content;
+import com.intellij.ui.content.ContentFactory;
 import com.intellij.util.messages.MessageBusConnection;
 import com.starxg.mybatislog.BasicFormatter;
 import com.starxg.mybatislog.Icons;
@@ -50,7 +43,6 @@ import java.util.*;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Function;
 
 import static com.starxg.mybatislog.MyBatisLogConsoleFilter.*;
 
@@ -63,18 +55,18 @@ public class MyBatisLogManager implements Disposable {
 
     private static final Key<MyBatisLogManager> KEY = Key.create(MyBatisLogManager.class.getName());
     private static final BasicFormatter FORMATTER = new BasicFormatter();
+    private static final String TOOL_WINDOW_ID = "MyBatis Log Plugin Free";
 
     private final Map<Integer, ConsoleViewContentType> consoleViewContentTypes = new ConcurrentHashMap<>();
 
     private final ConsoleViewImpl consoleView;
     private final Project project;
-    private final RunContentDescriptor descriptor;
+    private final Content content;
 
     private final AtomicInteger counter;
     private volatile String preparing;
     private volatile String parameters;
     private volatile boolean running = false;
-
 
     private final List<String> keywords = new ArrayList<>(0);
 
@@ -82,27 +74,28 @@ public class MyBatisLogManager implements Disposable {
         this.project = project;
 
         this.consoleView = createConsoleView();
+        this.counter = new AtomicInteger();
 
-        final JPanel panel = createConsolePanel(this.consoleView);
+        // Build panel: left toolbar + center console
+        final JPanel panel = new JPanel(new BorderLayout());
 
-        RunnerLayoutUi layoutUi = getRunnerLayoutUi();
+        final ActionToolbar actionToolbar = ActionManager.getInstance().createActionToolbar("MyBatisLogFree",
+                createActionToolbar(), false);
+        actionToolbar.setTargetComponent(consoleView.getComponent());
+        panel.add(actionToolbar.getComponent(), BorderLayout.WEST);
+        panel.add(consoleView.getComponent(), BorderLayout.CENTER);
 
-        Content content = layoutUi.createContent(UUID.randomUUID().toString(), panel, "SQL", Icons.MY_BATIS, panel);
-
+        // Add content to the tool window
+        final ToolWindow toolWindow = getToolWindow();
+        this.content = ContentFactory.getInstance().createContent(panel, "SQL", false);
         content.setCloseable(false);
-
-        layoutUi.addContent(content);
-
-        layoutUi.getOptions().setLeftToolbar(createActionToolbar(), "RunnerToolbar");
+        toolWindow.getContentManager().removeAllContents(true);
+        toolWindow.getContentManager().addContent(content);
+        toolWindow.getContentManager().setSelectedContent(content, true);
 
         final MessageBusConnection messageBusConnection = project.getMessageBus().connect();
 
-        this.counter = new AtomicInteger();
-        this.descriptor = getRunContentDescriptor(layoutUi);
-
         Disposer.register(this, consoleView);
-        Disposer.register(this, content);
-        Disposer.register(this, layoutUi.getContentManager());
         Disposer.register(this, messageBusConnection);
         Disposer.register(project, this);
 
@@ -113,22 +106,15 @@ public class MyBatisLogManager implements Disposable {
 
         messageBusConnection.subscribe(ToolWindowManagerListener.TOPIC, new ToolWindowManagerListener() {
             @Override
-            public void toolWindowRegistered(@NotNull String id) {
-
-            }
-
-            @Override
-            public void stateChanged() {
+            public void stateChanged(@NotNull ToolWindowManager toolWindowManager) {
                 if (!getToolWindow().isAvailable()) {
                     Disposer.dispose(MyBatisLogManager.this);
                 }
             }
         });
 
-        ExecutionManager.getInstance(project).getContentManager().showRunContent(MyBatisLogExecutor.getInstance(),
-                descriptor);
-
-        getToolWindow().activate(null);
+        // Auto-start capturing when created (panel shows only when user clicks the icon)
+        running = true;
     }
 
     private ConsoleViewImpl createConsoleView() {
@@ -143,7 +129,7 @@ public class MyBatisLogManager implements Disposable {
         return console;
     }
 
-    private ActionGroup createActionToolbar() {
+    private DefaultActionGroup createActionToolbar() {
 
         final ConsoleViewImpl consoleView = this.consoleView;
 
@@ -174,50 +160,17 @@ public class MyBatisLogManager implements Disposable {
         return actionGroup;
     }
 
-    private JPanel createConsolePanel(ConsoleView consoleView) {
-        final JPanel panel = new JPanel();
-        panel.setLayout(new BorderLayout());
-        panel.add(consoleView.getComponent(), BorderLayout.CENTER);
-        return panel;
-    }
+    public void println(String logPrefix, String sql, int rgb) {
 
-    private RunContentDescriptor getRunContentDescriptor(RunnerLayoutUi layoutUi) {
-        RunContentDescriptor descriptor = new RunContentDescriptor(new RunProfile() {
-            @Nullable
-            @Override
-            public RunProfileState getState(@NotNull Executor executor, @NotNull ExecutionEnvironment environment) {
-                return null;
-            }
+        final ConsoleViewContentType consoleViewContentType = consoleViewContentTypes.computeIfAbsent(rgb,
+                k -> new ConsoleViewContentType(String.valueOf(rgb),
+                        new TextAttributes(new JBColor(rgb, rgb), null, null, null, Font.PLAIN)));
 
-            @NotNull
-            @Override
-            public String getName() {
-                return "SQL";
-            }
+        consoleView.print(String.format("-- %s -- %s\n", counter.incrementAndGet(), logPrefix),
+                ConsoleViewContentType.USER_INPUT);
 
-            @Override
-            @Nullable
-            public Icon getIcon() {
-                return null;
-            }
-        }, new DefaultExecutionResult(), layoutUi);
-        descriptor.setExecutionId(System.nanoTime());
-
-        return descriptor;
-    }
-
-    private RunnerLayoutUi getRunnerLayoutUi() {
-
-        return RunnerLayoutUi.Factory.getInstance(project).create("MyBatis Log", "MyBatis Log", "MyBatis Log", project);
-    }
-
-    public void println(String logPrefix, String sql,int rgb) {
-
-        final ConsoleViewContentType consoleViewContentType = consoleViewContentTypes.computeIfAbsent(rgb, k -> new ConsoleViewContentType(String.valueOf(rgb), new TextAttributes(new JBColor(rgb, rgb), null, null, null, Font.PLAIN)));
-
-        consoleView.print(String.format("-- %s -- %s\n", counter.incrementAndGet(), logPrefix), ConsoleViewContentType.USER_INPUT);
-
-        consoleView.print(String.format("%s\n", isFormat() ? FORMATTER.format(sql) : StringUtils.removeEnd(sql, "\n")), consoleViewContentType);
+        consoleView.print(String.format("%s\n",
+                isFormat() ? FORMATTER.format(sql) : StringUtils.removeEnd(sql, "\n")), consoleViewContentType);
 
     }
 
@@ -264,7 +217,23 @@ public class MyBatisLogManager implements Disposable {
 
         MyBatisLogManager manager = getInstance(project);
 
-        if (Objects.nonNull(manager) && !Disposer.isDisposed(manager)) {
+        if (manager != null && !Disposer.isDisposed(manager)) {
+            return manager;
+        }
+
+        manager = new MyBatisLogManager(project);
+        project.putUserData(KEY, manager);
+
+        return manager;
+
+    }
+
+    @NotNull
+    public static MyBatisLogManager recreateInstance(@NotNull Project project) {
+
+        MyBatisLogManager manager = getInstance(project);
+
+        if (manager != null && !Disposer.isDisposed(manager)) {
             Disposer.dispose(manager);
         }
 
@@ -276,7 +245,7 @@ public class MyBatisLogManager implements Disposable {
     }
 
     public ToolWindow getToolWindow() {
-        return ToolWindowManager.getInstance(project).getToolWindow(MyBatisLogExecutor.TOOL_WINDOW_ID);
+        return ToolWindowManager.getInstance(project).getToolWindow(TOOL_WINDOW_ID);
     }
 
     public void resetKeywords(String text) {
@@ -334,11 +303,13 @@ public class MyBatisLogManager implements Disposable {
 
         stop();
 
-        ExecutionManager.getInstance(project).getContentManager().removeRunContent(MyBatisLogExecutor.getInstance(),
-                descriptor);
+        // Remove content from tool window to prevent duplicate tabs on recreate
+        ToolWindow toolWindow = getToolWindow();
+        if (toolWindow != null) {
+            toolWindow.getContentManager().removeContent(content, true);
+        }
 
     }
-
 
     private static final class RangeHighlighterDocumentListener implements DocumentListener {
 
@@ -360,12 +331,12 @@ public class MyBatisLogManager implements Disposable {
                 final int endOffset = document.getLineEndOffset(document.getLineNumber(i));
                 final String text = document.getText(TextRange.create(i, endOffset));
                 if (text.matches("^-- [\\d]+ -- .*")) {
-                    editor.getMarkupModel().addRangeHighlighter(i, i + 1, JumpSqlAction.SQL_LAYER, TextAttributes.ERASE_MARKER, HighlighterTargetArea.EXACT_RANGE);
+                    editor.getMarkupModel().addRangeHighlighter(i, i + 1, JumpSqlAction.SQL_LAYER,
+                            TextAttributes.ERASE_MARKER, HighlighterTargetArea.EXACT_RANGE);
                 }
                 i = endOffset + 1;
             }
         }
     }
-
 
 }
