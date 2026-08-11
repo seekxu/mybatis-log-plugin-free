@@ -10,12 +10,12 @@
 |---|---|
 | **项目名称** | MyBatis Log Free |
 | **项目类型** | IntelliJ IDEA 平台插件 |
-| **插件 ID** | `com.starxg.mybatis-log-plugin-free` |
-| **版本** | 1.3.1 |
-| **作者** | starxg (huangxingguang) |
+| **插件 ID** | `com.seekxu.mybatis-log-plugin-free` |
+| **版本** | 2.0.0 |
+| **作者** | seekxu (Forked from starxg) |
 | **许可证** | GPL v2 |
-| **目标平台** | IntelliJ IDEA 2026.2+ (sinceBuild=262) |
-| **语言/框架** | Java 25, IntelliJ Platform SDK 2.18.1 |
+| **目标平台** | IntelliJ IDEA 2024.1 ~ 2026.2 (sinceBuild=241, untilBuild=262.*) |
+| **语言/框架** | Java 17, IntelliJ Platform SDK 2.18.1 |
 | **构建工具** | Gradle 9.6.1 |
 
 ### 1.1 核心功能
@@ -299,7 +299,7 @@ String, Date, Time, LocalDate, LocalTime, LocalDateTime, BigDecimal, Timestamp
 
 ```xml
 <actions>
-    <action id="com.starxg.mybatislog.action.MyBatisLogAction"
+    <action id="com.seekxu.mybatislog.action.MyBatisLogAction"
             class="com.starxg.mybatislog.action.MyBatisLogAction"
             text="MyBatis Log Plugin"
             icon="/icons/ibatis.svg">
@@ -318,14 +318,14 @@ String, Date, Time, LocalDate, LocalTime, LocalDateTime, BigDecimal, Timestamp
 
 | 组件 | 要求 |
 |---|---|
-| **JDK** | Java 25 (通过 IntelliJ IDEA 的 JBR 获取) |
+| **JDK** | Java 17 (通过 IntelliJ IDEA 的 JBR 获取) |
 | **Gradle** | 9.6.1 (项目自带 Wrapper) |
-| **IntelliJ Platform** | 2026.2+ (sinceBuild=262) |
+| **IntelliJ Platform** | 2024.1+ (sinceBuild=241) |
 
 ### 6.2 构建命令
 
 ```powershell
-# 设置 JAVA_HOME 为 IDEA 自带的 JBR (JDK 25)
+# 设置 JAVA_HOME 为 IDEA 自带的 JBR (JDK 17+)
 $env:JAVA_HOME = "D:\Program Files\JetBrains\IntelliJ IDEA 2026.2.0.1\jbr"
 
 # 清理并构建 (跳过测试)
@@ -337,7 +337,7 @@ $env:JAVA_HOME = "D:\Program Files\JetBrains\IntelliJ IDEA 2026.2.0.1\jbr"
 
 ### 6.3 部署
 
-1. 构建产物位于 `build/libs/mybatis-log-plugin-free-1.3.1.jar`
+1. 构建产物位于 `build/libs/mybatis-log-plugin-free-2.0.0.jar`
 2. IDEA 中安装: **File → Settings → Plugins → ⚙ → Install Plugin from Disk...**
 3. 重启 IDEA
 
@@ -468,18 +468,7 @@ public class ExportAction extends AnAction {
 
 ## 9. 已知遗留问题
 
-### 9.1 Deprecation 警告
-
-```
-警告: [removal] ToolWindowManagerListener 中的
-toolWindowRegistered(@NotNull String) 已过时, 且标记为待删除
-```
-
-**原因**: IntelliJ Platform 2026.2 中 `ToolWindowManagerListener` 的 `toolWindowRegistered` 方法被标记为删除。当前代码中 `stateChanged` 已使用新签名 `stateChanged(@NotNull ToolWindowManager)`，不再需要 `toolWindowRegistered`。
-
-**影响**: 仅是编译警告，不影响运行。
-
-### 9.2 SettingsDialogWrapper.form 绑定警告
+### 9.1 SettingsDialogWrapper.form 绑定警告
 
 ```
 [ant:instrumentIdeaExtensions] Class to bind does not exist:
@@ -488,9 +477,22 @@ com.starxg.mybatislog.gui.SettingsDialogWrapper
 
 **原因**: `.form` 文件引用了 `SettingsDialogWrapper` 类。需确认该类存在且可被正确绑定。
 
-### 9.3 测试运行失败
+### 9.2 测试运行失败
 
 `gradlew test` 在测试 JVM 启动时崩溃（exit code 268435466），可能与 IDEA 平台测试沙箱环境相关。单元测试仅涉及静态方法，可跳过：`gradlew build -x test`。
+
+### 9.3 跨版本兼容性说明
+
+插件支持 IntelliJ IDEA 2024.1 ~ 2026.2。主要 API 兼容点：
+- `ToolWindowManagerListener.stateChanged` - 已移除该监听，改为直接操作
+- `ContentFactory.createContent` - 稳定 API，无版本差异
+- `ToolWindowFactory` - 稳定接口
+
+### 9.4 DonateAction 版本号机制
+
+捐赠按钮状态通过 `PluginManagerCore.getPlugin(PluginId.getId("com.seekxu.mybatis-log-plugin-free"))` 动态读取版本号。版本更新时，key 变化会导致捐赠按钮重新显示。
+
+**注意**: 升级插件版本时，只需修改 `build.gradle` 中的 `version` 字段，代码会自动读取新版本号。
 
 ---
 
@@ -498,9 +500,9 @@ com.starxg.mybatislog.gui.SettingsDialogWrapper
 
 | 技术 | 版本/说明 |
 |---|---|
-| Java | 25 (source/target compatibility) |
+| Java | 17 (source/target compatibility) |
 | IntelliJ Platform SDK | 2.18.1 |
-| IntelliJ IDEA | 2026.2 (sinceBuild=262) |
+| IntelliJ IDEA | 2024.1 ~ 2026.2 (sinceBuild=241, untilBuild=262.*) |
 | Gradle | 9.6.1 |
 | Apache Commons Lang 3 | 字符串工具 (StringUtils) |
 | JUnit | 4.13.2 |
