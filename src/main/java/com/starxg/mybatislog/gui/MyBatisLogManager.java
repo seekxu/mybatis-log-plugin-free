@@ -25,7 +25,6 @@ import com.intellij.openapi.util.Key;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.openapi.wm.ToolWindowManager;
-import com.intellij.openapi.wm.ex.ToolWindowManagerListener;
 import com.intellij.ui.JBColor;
 import com.intellij.ui.content.Content;
 import com.intellij.ui.content.ContentFactory;
@@ -103,15 +102,6 @@ public class MyBatisLogManager implements Disposable {
         this.preparing = propertiesComponent.getValue(PREPARING_KEY, "Preparing: ");
         this.parameters = propertiesComponent.getValue(PARAMETERS_KEY, "Parameters: ");
         resetKeywords(propertiesComponent.getValue(KEYWORDS_KEY, StringUtils.EMPTY));
-
-        messageBusConnection.subscribe(ToolWindowManagerListener.TOPIC, new ToolWindowManagerListener() {
-            @Override
-            public void stateChanged(@NotNull ToolWindowManager toolWindowManager) {
-                if (!getToolWindow().isAvailable()) {
-                    Disposer.dispose(MyBatisLogManager.this);
-                }
-            }
-        });
 
         // Auto-start capturing when created (panel shows only when user clicks the icon)
         running = true;

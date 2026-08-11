@@ -4,7 +4,7 @@ plugins {
 }
 
 group = 'com.starxg'
-version = '1.3.1'
+version = '2.0.0'
 
 repositories {
     mavenCentral()
@@ -21,20 +21,20 @@ dependencies {
         if (localIdeaPath.isPresent()) {
             local localIdeaPath.get()
         } else {
-            intellijIdea '2026.2'
+            intellijIdea '2024.1'
         }
     }
 }
 
 java {
     toolchain {
-        languageVersion = JavaLanguageVersion.of(25)
+        languageVersion = JavaLanguageVersion.of(17)
     }
 }
 
 tasks.withType(JavaCompile).configureEach {
-    sourceCompatibility = '25'
-    targetCompatibility = '25'
+    sourceCompatibility = '17'
+    targetCompatibility = '17'
     options.encoding = 'UTF-8'
 }
 
@@ -43,13 +43,15 @@ intellijPlatform {
 
     pluginConfiguration {
         ideaVersion {
-            sinceBuild = '262'
+            sinceBuild = '241'
+            untilBuild = '262.*'
         }
 
         changeNotes = """
 <dl>
-    <dt><b>${project.version}</b></dt>
-    <dd>fix compatibility with IntelliJ IDEA 2026.2</dd>
+    <dt><b>2.0.0</b></dt>
+    <dd>Refactored to independent ToolWindow architecture (bottom panel)</dd>
+    <dd>Supports IntelliJ IDEA 2024.1 - 2026.2</dd>
 </dl>
 <dl>
     <dt>1.3.0</dt>
