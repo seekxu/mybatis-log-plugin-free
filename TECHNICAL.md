@@ -1,7 +1,5 @@
 # MyBatis Log Plugin Free — 技术文档
 
-> 供 AI Agent 快速理解项目并进行修改参考。
-
 ---
 
 ## 1. 项目概览
