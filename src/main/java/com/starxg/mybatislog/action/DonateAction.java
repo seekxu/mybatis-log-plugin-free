@@ -1,7 +1,7 @@
 package com.starxg.mybatislog.action;
 
 import com.intellij.ide.plugins.IdeaPluginDescriptor;
-import com.intellij.ide.plugins.PluginManager;
+import com.intellij.ide.plugins.PluginManagerCore;
 import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
@@ -9,6 +9,7 @@ import com.intellij.openapi.extensions.PluginId;
 import com.starxg.mybatislog.Icons;
 import com.starxg.mybatislog.gui.DonateDialogWrapper;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.Objects;
 
@@ -18,6 +19,7 @@ import java.util.Objects;
  */
 public class DonateAction extends AnAction {
 
+    private static final String PLUGIN_ID = "com.seekxu.mybatis-log-plugin-free";
 
     private boolean isVisible;
 
@@ -48,11 +50,17 @@ public class DonateAction extends AnAction {
         e.getPresentation().setVisible(isVisible);
     }
 
+    @NotNull
     private String getDonateKey() {
-        final IdeaPluginDescriptor plugin = PluginManager.getPlugin(PluginId.getId("com.starxg.mybatis-log-plugin-free"));
-        if (Objects.isNull(plugin)) {
-            return DonateAction.class.getName();
+        return DonateAction.class.getName() + "@" + getVersion();
+    }
+
+    @NotNull
+    private static String getVersion() {
+        @Nullable IdeaPluginDescriptor plugin = PluginManagerCore.getPlugin(PluginId.getId(PLUGIN_ID));
+        if (plugin != null) {
+            return plugin.getVersion();
         }
-        return DonateAction.class.getName() + "@" + plugin.getVersion();
+        return "unknown";
     }
 }

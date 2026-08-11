@@ -88,7 +88,7 @@ public class DonateDialogWrapper extends DialogWrapper {
             kofi.setIcon(Icons.DONATE);
             kofi.setHyperlinkText("Donate on Ko-fi");
             kofi.setUseIconAsLink(true);
-            kofi.setHyperlinkTarget("https://ko-fi.com/huangxingguang");
+            kofi.setHyperlinkTarget("https://ko-fi.com/seekxu");
             panel.add(kofi, c);
 
             c = new GridBagConstraints();
@@ -99,7 +99,7 @@ public class DonateDialogWrapper extends DialogWrapper {
             paypal.setIcon(Icons.DONATE);
             paypal.setHyperlinkText("Donate on PayPal");
             paypal.setUseIconAsLink(true);
-            paypal.setHyperlinkTarget("https://paypal.me/huangxingguang");
+            paypal.setHyperlinkTarget("https://paypal.me/mrbmyc");
 
             panel.add(paypal, c);
 
