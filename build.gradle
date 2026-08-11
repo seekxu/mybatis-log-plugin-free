@@ -59,24 +59,7 @@ intellijPlatform {
     <dd>Memory safety: console auto-trim at 10000 lines</dd>
     <dd>Performance: throttled cleanup, ThreadLocal Matcher reuse</dd>
     <dd>Clear All now resets sequence counter</dd>
-</dl>
-<dl>
-    <dt>1.3.0</dt>
-    <dd>support custom colors <a href="https://github.com/starxg/mybatis-log-plugin-free/issues/6">#6</a></dd>
-    <dd>fix <a href="https://github.com/starxg/mybatis-log-plugin-free/issues/5">#5</a></dd>
-</dl>
-<dl>
-    <dt>1.2.0</dt>
-    <dd>support jump</dd>
-    <dd>bug fixes and improvements</dd>
-</dl>
-<dl>
-    <dt>1.1.0</dt>
-    <dd>support disable formatting</dd>
-</dl>
-<dl>
-    <dt>1.0.0</dt>
-    <dd>Restore mybatis sql log</dd>
+    <dd>Copy SQL: one-click copy current SQL entry (regex-based, cursor anywhere)</dd>
 </dl>
         """
     }

@@ -1,5 +1,7 @@
 # MyBatis Log Plugin Free
 
+[**中文**](README.md) | [**English**](README_EN.md)
+
 > 基于 [starxg/mybatis-log-plugin-free](https://github.com/starxg/mybatis-log-plugin-free) 重构，采用独立 ToolWindow 架构，支持 IDEA 2024.1 - 2026.2。
 
 一个 IntelliJ IDEA 插件，用于将 MyBatis 框架输出的分离式 SQL 日志还原为完整的可执行 SQL 语句，并在 IDEA 底部的独立工具窗口中展示。
@@ -45,7 +47,7 @@ $env:JAVA_HOME = "D:\Program Files\JetBrains\IntelliJ IDEA 2026.2.0.1\jbr"
 
 ## 技术文档
 
-详见 [TECHNICAL.md](TECHNICAL.md)。
+详见 [TECHNICAL.md](TECHNICAL.md)（中文）或 [TECHNICAL_EN.md](TECHNICAL_EN.md)（英文）。
 
 ## 许可证
 
