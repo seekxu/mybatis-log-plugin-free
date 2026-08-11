@@ -33,11 +33,13 @@ UPDATE mp_user SET name='张三' WHERE id=1
 
 - **SQL 日志还原** — 用实际参数值替换 `?` 占位符
 - **独立 ToolWindow** — 固定在底部，点击图标打开面板
-- **语法高亮** — INSERT/DELETE/UPDATE/SELECT 不同颜色
+- **语法高亮** — INSERT/DELETE/UPDATE/SELECT/WITH/EXPLAIN 不同颜色
 - **SQL 格式化** — 内置 Hibernate BasicFormatter，可切换
 - **SQL 导航** — 上一条/下一条跳转
 - **关键词过滤** — 按关键词忽略不相关日志
 - **前缀自定义** — 支持修改 `Preparing:` / `Parameters:` 前缀适配不同日志框架
+- **多线程并发** — 支持多线程日志交错，按 logger 名正确配对
+- **日志格式兼容** — 三级回退提取 source，适配多种自定义日志格式
 
 ---
 
@@ -127,7 +129,7 @@ MyBatisLogToolWindowFactory ──创建──▶ MyBatisLogManager (首次打�
         │
 MyBatisLogAction ──重启/激活──▶ MyBatisLogManager.recreateInstance()
         │
-Action 类 (RerunAction, StopAction, SettingsAction, ...)
+Action 类 (RerunAction, StopAction, SettingsAction, CopySqlAction, ...)
         │  注入 MyBatisLogManager 引用
         └── 操作 MyBatisLogManager 的 run/stop/settings
 ```
@@ -161,7 +163,8 @@ mybatis-log-plugin-free/
 │   │   │       ├── PrettyPrintToggleAction.java    # 格式化开关
 │   │   │       ├── ClearAllAction.java             # 清空
 │   │   │       ├── DonateAction.java               # 捐赠
-│   │   │       └── JumpSqlAction.java              # SQL 导航抽象基类
+│   │   │       ├── JumpSqlAction.java              # SQL 导航抽象基类
+│   │   │       └── CopySqlAction.java             # 复制当前条目 SQL
 │   │   └── resources/
 │   │       ├── META-INF/
 │   │       │   ├── plugin.xml                      # 插件描述符
@@ -201,7 +204,8 @@ mybatis-log-plugin-free/
 | `getInstance(Project)` | 获取当前实例（如果 ToolWindow 不可用则 dispose 并返回 null） |
 | `run()` | 开始监听 MyBatis 日志 |
 | `stop()` | 停止监听 |
-| `println(logPrefix, sql, rgb)` | 输出一条还原后的 SQL 到 ConsoleView |
+| `resetCounter()` | 重置 SQL 序号计数器（清空时调用） |
+| `println(logPrefix, sql, rgb)` | 输出一条还原后的 SQL 到 ConsoleView，超过 10000 行时自动 trim 最旧 20% |
 | `dispose()` | 清理资源（移除 Content、停止监听） |
 
 **重要设计决策**:
@@ -209,8 +213,9 @@ mybatis-log-plugin-free/
 - **`dispose()` 中必须调用 `removeContent`**: 防止 Rerun 时产生重复 Tab
 - **构造函数中 `removeAllContents(true)`**: 确保重新打开面板时不会有残留内容
 - **`running = true` 在构造函数末尾**: 面板一打开即自动开始捕获日志
+- **`MAX_LINE_COUNT = 10000`**: 超过阈值时删除最旧 20% 行，保留最近 8000 行，防止内存泄漏
 
-**线程安全**: 构造函数应在 EDT 调用。`println` 由 ConsoleFilter 调用，也需在 EDT 上。
+**线程安全**: 构造函数应在 EDT 调用。`println` 由 ConsoleFilter 调用，也需在 EDT 上。`keywords` 使用 `CopyOnWriteArrayList` 保证并发读写安全。
 
 ### 4.2 MyBatisLogConsoleFilter (日志过滤器)
 
@@ -221,8 +226,10 @@ mybatis-log-plugin-free/
 **核心解析逻辑**:
 ```
 applyFilter(line)
-  ├── 状态机: 遇到 "Preparing:" → 保存 SQL 模板
-  ├── 遇到 "Parameters:" → 完成解析，调用 manager.println()
+  ├── 提取 source（三级回退: logger 名 → [thread] → 完整前缀）
+  ├── 匹配 "Preparing:" → 暂存 pendingSqls[source]
+  ├── 匹配 "Parameters:" → 按 source 匹配并配对，调用 manager.println()
+  ├── 每 5s 清理一次过期 Preparing
   └── 其他行: 忽略
 
 parseSql(sql, params)
@@ -235,6 +242,11 @@ parseParams(line)
   ├── 分割 "1(Long), 张三(String)"
   └── 返回 Queue<Entry<值, 类型>>
 ```
+
+**关键设计**:
+- **Map 多源缓存**: `ConcurrentHashMap<String, PendingSql>` 按 source 缓存多条 Preparing，支持多线程交错
+- **10 秒超时**: `PendingSql` 携带时间戳，超时自动清理，防止内存泄漏
+- **ThreadLocal 复用 Matcher**: 避免每行日志创建新正则对象
 
 **常量 Key** (用于 PropertiesComponent 持久化):
 - `PREPARING_KEY` — Preparing 前缀
@@ -269,6 +281,23 @@ String, Date, Time, LocalDate, LocalTime, LocalDateTime, BigDecimal, Timestamp
 2. `Console 右键菜单` → 激活已有实例
 
 **`rerun(Project)`**: 调用 `MyBatisLogManager.recreateInstance(project).run()`
+
+### 4.6 CopySqlAction (复制 SQL)
+
+**文件**: `src/main/java/com/starxg/mybatislog/action/CopySqlAction.java`
+
+**职责**: 提供一键复制当前光标所在条目的完整 SQL 语句。
+
+**核心逻辑**:
+```
+actionPerformed()
+  ├── 获取光标行号
+  ├── findHeaderLineBackward() → 正则匹配 `-- \d+ --` 找到当前条目头
+  ├── findHeaderLineForward()  → 找下一个条目头（或文档结尾）
+  └── 提取起点到终点的文本 → 复制到剪贴板
+```
+
+**光标位置覆盖**: 光标在条目序号行、SQL 首行、多行 SQL 的任意换行行，均能正确复制完整 SQL。
 
 ---
 
@@ -460,7 +489,7 @@ public class ExportAction extends AnAction {
 
 ### 8.6 修改/添加关键词过滤
 
-编辑 `MyBatisLogConsoleFilter.applyFilter()` 的关键词匹配逻辑（第 73-80 行）。关键词列表通过 `PropertiesComponent` 的 `KEYWORDS_KEY` 持久化。
+编辑 `MyBatisLogConsoleFilter.applyFilter()` 的关键词匹配逻辑。关键词列表通过 `PropertiesComponent` 的 `KEYWORDS_KEY` 持久化。
 
 ---
 
@@ -491,6 +520,13 @@ com.starxg.mybatislog.gui.SettingsDialogWrapper
 捐赠按钮状态通过 `PluginManagerCore.getPlugin(PluginId.getId("com.seekxu.mybatis-log-plugin-free"))` 动态读取版本号。版本更新时，key 变化会导致捐赠按钮重新显示。
 
 **注意**: 升级插件版本时，只需修改 `build.gradle` 中的 `version` 字段，代码会自动读取新版本号。
+
+### 9.5 边界情况（不影响正常使用）
+
+- **parseParams 逗号分隔**: 参数值含 `, ` 时会被错误分割，但 MyBatis 实际不会输出此类参数
+- **cleanupExpired 弱一致性**: `ConcurrentHashMap` 迭代器可能漏掉新增条目，但清理本身就是非精确操作
+- **pendingSqls 无容量上限**: 极端堆积场景，已有 10 秒超时兜底
+- **trim 高亮扫描**: 超过 10000 行会全量扫描高亮标记，但触发频率极低
 
 ---
 

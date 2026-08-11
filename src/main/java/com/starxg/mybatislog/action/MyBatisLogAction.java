@@ -41,7 +41,7 @@ public class MyBatisLogAction extends DumbAwareAction {
         rerun(project);
     }
 
-    public void rerun(final Project project) {
+    public static void rerun(final Project project) {
         MyBatisLogManager.recreateInstance(project).run();
     }
 }

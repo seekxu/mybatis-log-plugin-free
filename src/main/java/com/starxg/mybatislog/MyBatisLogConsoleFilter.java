@@ -1,10 +1,12 @@
 package com.starxg.mybatislog;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import com.intellij.execution.ui.ConsoleViewContentType;
 import com.intellij.ide.util.PropertiesComponent;
-import com.intellij.ui.JBColor;
 import org.apache.commons.lang3.StringUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -31,18 +33,24 @@ public class MyBatisLogConsoleFilter implements Filter {
 
     private static final char MARK = '?';
     private static final long PREPARING_TIMEOUT_MS = 10_000; // 10 seconds
+    private static final long CLEANUP_INTERVAL_MS = 5_000; // throttle cleanup to every 5s
 
     // Regex to extract logger name (e.g., "com.example.UserMapper" or "p.a.d.P.getPersonDetail")
-    private static final java.util.regex.Pattern LOGGER_PATTERN = java.util.regex.Pattern.compile(
+    private static final Pattern LOGGER_PATTERN = Pattern.compile(
             "[a-zA-Z_][a-zA-Z0-9_]*\\.[a-zA-Z_][a-zA-Z0-9_.]*"
     );
+
+    // ThreadLocal Matcher to avoid per-line allocation
+    private static final ThreadLocal<Matcher> MATCHER_TL = ThreadLocal.withInitial(() -> LOGGER_PATTERN.matcher(""));
 
     private static final Set<String> NEED_BRACKETS;
 
     private final Project project;
 
     // Cache multiple Preparing statements by source, with timestamp for timeout
-    private final Map<String, PendingSql> pendingSqls = new LinkedHashMap<>();
+    private final Map<String, PendingSql> pendingSqls = new ConcurrentHashMap<>();
+
+    private volatile long lastCleanupTime = 0;
 
     static {
         Set<String> types = new HashSet<>(8);
@@ -154,8 +162,15 @@ public class MyBatisLogConsoleFilter implements Filter {
 
     /**
      * Remove expired Preparing entries to prevent memory leaks.
+     * Throttled to run at most once per CLEANUP_INTERVAL_MS.
      */
     private void cleanupExpired() {
+        final long now = System.currentTimeMillis();
+        if (now - lastCleanupTime < CLEANUP_INTERVAL_MS) {
+            return;
+        }
+        lastCleanupTime = now;
+
         final Iterator<Map.Entry<String, PendingSql>> it = pendingSqls.entrySet().iterator();
         while (it.hasNext()) {
             final Map.Entry<String, PendingSql> entry = it.next();
@@ -192,8 +207,9 @@ public class MyBatisLogConsoleFilter implements Filter {
         // Extract the part before the prefix
         String prefix = line.substring(0, idx).trim();
         
-        // Step 1: Try to extract logger name via regex
-        java.util.regex.Matcher matcher = LOGGER_PATTERN.matcher(prefix);
+        // Step 1: Try to extract logger name via regex (reuse ThreadLocal Matcher)
+        final Matcher matcher = MATCHER_TL.get();
+        matcher.reset(prefix);
         if (matcher.find()) {
             return matcher.group();
         }

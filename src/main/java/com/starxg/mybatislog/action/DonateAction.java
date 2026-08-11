@@ -21,7 +21,7 @@ public class DonateAction extends AnAction {
 
     private static final String PLUGIN_ID = "com.seekxu.mybatis-log-plugin-free";
 
-    private boolean isVisible;
+    private volatile boolean isVisible;
 
     public DonateAction(PropertiesComponent propertiesComponent) {
         super("Donate", "Donate", Icons.DONATE);

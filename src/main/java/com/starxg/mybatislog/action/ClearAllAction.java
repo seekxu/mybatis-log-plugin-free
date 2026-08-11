@@ -8,6 +8,7 @@ import com.intellij.openapi.actionSystem.CommonDataKeys;
 import com.intellij.openapi.actionSystem.LangDataKeys;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.DumbAwareAction;
+import com.starxg.mybatislog.gui.MyBatisLogManager;
 import org.jetbrains.annotations.NotNull;
 
 /**
@@ -17,10 +18,12 @@ import org.jetbrains.annotations.NotNull;
  */
 public class ClearAllAction extends DumbAwareAction {
     private final ConsoleViewImpl consoleView;
+    private final MyBatisLogManager manager;
 
-    public ClearAllAction(ConsoleViewImpl consoleView) {
+    public ClearAllAction(ConsoleViewImpl consoleView, MyBatisLogManager manager) {
         super(ExecutionBundle.message("clear.all.from.console.action.name"), "Clear All", AllIcons.Actions.GC);
         this.consoleView = consoleView;
+        this.manager = manager;
     }
 
     @Override
@@ -40,6 +43,7 @@ public class ClearAllAction extends DumbAwareAction {
     public void actionPerformed(@NotNull final AnActionEvent e) {
         if (consoleView != null) {
             consoleView.clear();
+            manager.resetCounter();
         }
     }
 }

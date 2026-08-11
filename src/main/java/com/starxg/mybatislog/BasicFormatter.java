@@ -79,7 +79,6 @@ public class BasicFormatter {
         boolean beginLine = true;
         boolean afterBeginBeforeEnd;
         boolean afterByOrSetOrFromOrSelect;
-        boolean afterValues;
         boolean afterOn;
         boolean afterBetween;
         boolean afterInsert;
@@ -295,7 +294,6 @@ public class BasicFormatter {
             out();
             indent++;
             newline();
-            afterValues = true;
         }
 
         private void closeParen() {

@@ -20,7 +20,7 @@ public class RerunAction extends AnAction {
     @Override
     public void actionPerformed(@NotNull AnActionEvent e) {
         if (Objects.nonNull(e.getProject())) {
-            new MyBatisLogAction().rerun(e.getProject());
+            MyBatisLogAction.rerun(e.getProject());
         }
     }
 

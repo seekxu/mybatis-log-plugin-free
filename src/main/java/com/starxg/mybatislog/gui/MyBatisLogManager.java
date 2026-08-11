@@ -16,6 +16,8 @@ import com.intellij.openapi.editor.actions.ScrollToTheEndToolbarAction;
 import com.intellij.openapi.editor.actions.ToggleUseSoftWrapsToolbarAction;
 import com.intellij.openapi.editor.event.DocumentEvent;
 import com.intellij.openapi.editor.event.DocumentListener;
+import com.intellij.openapi.editor.ex.MarkupModelEx;
+import com.intellij.openapi.editor.markup.RangeHighlighter;
 import com.intellij.openapi.editor.impl.softwrap.SoftWrapAppliancePlaces;
 import com.intellij.openapi.editor.markup.HighlighterTargetArea;
 import com.intellij.openapi.editor.markup.TextAttributes;
@@ -30,7 +32,6 @@ import com.intellij.ui.content.Content;
 import com.intellij.ui.content.ContentFactory;
 import com.intellij.util.messages.MessageBusConnection;
 import com.starxg.mybatislog.BasicFormatter;
-import com.starxg.mybatislog.Icons;
 import com.starxg.mybatislog.action.*;
 import org.apache.commons.lang3.StringUtils;
 import org.jetbrains.annotations.NotNull;
@@ -41,6 +42,7 @@ import java.awt.*;
 import java.util.*;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static com.starxg.mybatislog.MyBatisLogConsoleFilter.*;
@@ -55,6 +57,7 @@ public class MyBatisLogManager implements Disposable {
     private static final Key<MyBatisLogManager> KEY = Key.create(MyBatisLogManager.class.getName());
     private static final BasicFormatter FORMATTER = new BasicFormatter();
     private static final String TOOL_WINDOW_ID = "MyBatis Log Plugin Free";
+    private static final int MAX_LINE_COUNT = 10_000; // clear console when exceeding this threshold
 
     private final Map<Integer, ConsoleViewContentType> consoleViewContentTypes = new ConcurrentHashMap<>();
 
@@ -67,7 +70,7 @@ public class MyBatisLogManager implements Disposable {
     private volatile String parameters;
     private volatile boolean running = false;
 
-    private final List<String> keywords = new ArrayList<>(0);
+    private final List<String> keywords = new CopyOnWriteArrayList<>();
 
     private MyBatisLogManager(@NotNull Project project) {
         this.project = project;
@@ -130,6 +133,7 @@ public class MyBatisLogManager implements Disposable {
         actionGroup.addSeparator();
         actionGroup.add(new PreviousSqlAction(consoleView));
         actionGroup.add(new NextSqlAction(consoleView));
+        actionGroup.add(new CopySqlAction(consoleView));
         actionGroup.addSeparator();
 
         actionGroup.add(new ToggleUseSoftWrapsToolbarAction(SoftWrapAppliancePlaces.CONSOLE) {
@@ -143,7 +147,7 @@ public class MyBatisLogManager implements Disposable {
         actionGroup.add(new ScrollToTheEndToolbarAction(consoleView.getEditor()));
         actionGroup.add(new PrettyPrintToggleAction());
         actionGroup.addSeparator();
-        actionGroup.add(new ClearAllAction(consoleView));
+        actionGroup.add(new ClearAllAction(consoleView, this));
         actionGroup.addSeparator();
         actionGroup.add(new DonateAction(PropertiesComponent.getInstance(project)));
 
@@ -151,6 +155,23 @@ public class MyBatisLogManager implements Disposable {
     }
 
     public void println(String logPrefix, String sql, int rgb) {
+
+        // Prevent unbounded memory growth: trim oldest lines, keep last 80%
+        final Document document = consoleView.getEditor().getDocument();
+        if (document.getLineCount() > MAX_LINE_COUNT) {
+            // Remove existing SQL-layer highlighters to avoid duplicates after trim
+            final MarkupModelEx markupModel = (MarkupModelEx) consoleView.getEditor().getMarkupModel();
+            for (RangeHighlighter h : markupModel.getAllHighlighters()) {
+                if (h.isValid() && h.getLayer() == JumpSqlAction.SQL_LAYER) {
+                    markupModel.removeHighlighter(h);
+                }
+            }
+            // Delete oldest 20% lines, keep last 80% (~8000 lines)
+            final int linesToKeep = MAX_LINE_COUNT * 4 / 5;
+            final int linesToRemove = document.getLineCount() - linesToKeep;
+            document.deleteString(0, document.getLineEndOffset(linesToRemove - 1));
+            // RangeHighlighterDocumentListener will re-add markers for remaining lines
+        }
 
         final ConsoleViewContentType consoleViewContentType = consoleViewContentTypes.computeIfAbsent(rgb,
                 k -> new ConsoleViewContentType(String.valueOf(rgb),
@@ -186,13 +207,18 @@ public class MyBatisLogManager implements Disposable {
 
     }
 
+    public void resetCounter() {
+        counter.set(0);
+    }
+
     @Nullable
     public static MyBatisLogManager getInstance(@NotNull Project project) {
 
         MyBatisLogManager manager = project.getUserData(KEY);
 
         if (Objects.nonNull(manager)) {
-            if (!manager.getToolWindow().isAvailable()) {
+            final ToolWindow toolWindow = manager.getToolWindow();
+            if (toolWindow == null || !toolWindow.isAvailable()) {
                 Disposer.dispose(manager);
                 manager = null;
             }
@@ -240,26 +266,17 @@ public class MyBatisLogManager implements Disposable {
 
     public void resetKeywords(String text) {
 
-        keywords.clear();
-
-        if (StringUtils.isBlank(text)) {
-            return;
-        }
-
-        final String[] split = text.split("\n");
-
-        final List<String> keywords = new ArrayList<>(split.length);
-
-        for (String keyword : split) {
-            if (StringUtils.isBlank(keyword)) {
-                continue;
+        final List<String> newKeywords = new ArrayList<>();
+        if (StringUtils.isNotBlank(text)) {
+            for (String keyword : text.split("\n")) {
+                if (StringUtils.isNotBlank(keyword)) {
+                    newKeywords.add(keyword);
+                }
             }
-
-            keywords.add(keyword);
-
         }
-
-        this.keywords.addAll(keywords);
+        // Atomic replace: clear + addAll ensures filter thread sees a consistent snapshot
+        keywords.clear();
+        keywords.addAll(newKeywords);
     }
 
     public String getPreparing() {
@@ -301,7 +318,7 @@ public class MyBatisLogManager implements Disposable {
 
     }
 
-    private static final class RangeHighlighterDocumentListener implements DocumentListener {
+    private final class RangeHighlighterDocumentListener implements DocumentListener {
 
         private final Editor editor;
 
@@ -313,6 +330,13 @@ public class MyBatisLogManager implements Disposable {
         public void documentChanged(@NotNull DocumentEvent event) {
             final Document document = event.getDocument();
             final int textLength = document.getTextLength();
+
+            // Detect external clear (e.g. right-click Clear All) and reset counter
+            if (textLength == 0 && counter.get() > 0) {
+                counter.set(0);
+                return;
+            }
+
             if (textLength < 1) {
                 return;
             }
