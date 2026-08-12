@@ -154,6 +154,14 @@ public class MyBatisLogManager implements Disposable {
         return actionGroup;
     }
 
+    private static final boolean DEBUG = false; // Set to false after debugging
+
+    public void debug(String msg) {
+        if (DEBUG) {
+            consoleView.print("[DEBUG] " + msg + "\n", ConsoleViewContentType.SYSTEM_OUTPUT);
+        }
+    }
+
     public void println(String logPrefix, String sql, int rgb) {
 
         // Prevent unbounded memory growth: trim oldest lines, keep last 80%
@@ -180,8 +188,12 @@ public class MyBatisLogManager implements Disposable {
         consoleView.print(String.format("-- %s -- %s\n", counter.incrementAndGet(), logPrefix),
                 ConsoleViewContentType.USER_INPUT);
 
-        consoleView.print(String.format("%s\n",
-                isFormat() ? FORMATTER.format(sql) : StringUtils.removeEnd(sql, "\n")), consoleViewContentType);
+        // Normalize line endings: strip all \r and collapse consecutive \n into single \n
+        // This prevents double-blank-lines from BasicFormatter using System.lineSeparator() on Windows
+        // and from \r\n handling叠加 in ConsoleView
+        final String rawSql = isFormat() ? FORMATTER.format(sql) : StringUtils.removeEnd(sql, "\n");
+        final String cleanSql = rawSql.replace("\r", "").replaceAll("\\n{2,}", "\n");
+        consoleView.print(String.format("%s\n", cleanSql), consoleViewContentType);
 
     }
 

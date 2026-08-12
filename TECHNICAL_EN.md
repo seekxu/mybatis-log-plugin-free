@@ -96,21 +96,37 @@ MyBatisLogConsoleFilter.applyFilter(line, length)
     │
     ├── Check MyBatisLogManager.isRunning()
     ├── Keyword filtering
-    ├── Match "Preparing:" → cache SQL template
-    ├── Match "Parameters:" → trigger parsing
+    ├── Match "Preparing:" → cache pendingSqls[source]
+    ├── Match "Parameters:" → match by source, pair
+    │
+    ├── [Params insufficient] → start paramBuffer continuation buffer
+    │   └── Each line: skip blank lines → append to paramBuffer → re-parse
+    │
+    ├── [Params sufficient] → call processSql()
     │
     ▼
 MyBatisLogConsoleFilter.parseParams(line)
-    │  Parse "张三(String), 1(Long)" → Queue<Entry<value, type>>
+    │  Remove all \r → trim whitespace
+    │  Depth-tracking tokenizer:
+    │   → Split by comma only at depth=0 (outside parentheses)
+    │   → Separator detection: whitespace after comma contains space(0x20) OR newline(\n)
+    │   → Tolerates console wrapping: ",\n   " or ",\n" (comma and space across lines)
+    │   → Correctly handles commas inside XML/JSON values (depth>0, no split)
+    │   → Identifies "(TypeName)" type markers, extracts value and type
+    │   → Returns Queue<Entry<value, type>>
     ▼
 MyBatisLogConsoleFilter.parseSql(sql, params)
-    │  Replace ? placeholders with parameters
-    │  String/Date types add single quotes
+    │  O(n) scan: builds new StringBuilder directly (no deleteCharAt/insert shifts)
+    │  On ? placeholder → take param from queue → append to result
+    │  Preserves ? when queue is empty (prevents malformed SQL from insufficient params)
+    │  String/Date types get single quotes: 'value'
+    │  Numeric/null types replaced directly
     ▼
 MyBatisLogManager.println(prefix, sql, rgb)
     │
     ├── Determine color by SQL type (INSERT/DELETE/UPDATE/SELECT)
-    ├── Optional formatting (BasicFormatter)
+    ├── Optional formatting (BasicFormatter, uses System.lineSeparator() on Windows)
+    ├── Line ending normalization: remove \r → collapse consecutive \n → prevent double-blank-lines
     └── Output to ConsoleView
 ```
 
@@ -208,7 +224,8 @@ mybatis-log-plugin-free/
 | `run()` | Start listening for MyBatis logs |
 | `stop()` | Stop listening |
 | `resetCounter()` | Reset SQL sequence counter (on clear) |
-| `println(logPrefix, sql, rgb)` | Output restored SQL to ConsoleView; auto-trims oldest 20% when >10000 lines |
+| `println(logPrefix, sql, rgb)` | Output restored SQL to ConsoleView; normalizes line endings (remove \r, collapse consecutive \n); auto-trims oldest 20% when >10000 lines |
+| `debug(msg)` | Output debug log to ConsoleView (controlled by `DEBUG` flag, default off), for troubleshooting parsing issues |
 | `dispose()` | Cleanup resources (remove content, stop listening) |
 
 **Design Decisions**:
@@ -216,6 +233,7 @@ mybatis-log-plugin-free/
 - `dispose()` must call `removeContent` to prevent duplicate tabs on Rerun
 - Constructor calls `removeAllContents(true)` to ensure no residual content
 - `running = true` at end of constructor: auto-starts capture on panel open
+- **Line ending normalization**: `println` applies `replace("\r", "").replaceAll("\\n{2,}", "\n")` before output, eliminating double-blank-lines from BasicFormatter's `System.lineSeparator()` on Windows
 
 ---
 
@@ -230,26 +248,46 @@ mybatis-log-plugin-free/
 applyFilter(line)
   ├── Extract source (3-tier: logger regex → [thread] → full prefix)
   ├── Match "Preparing:" → cache pendingSqls[source]
-  ├── Match "Parameters:" → match by source, pair, call manager.println()
+  ├── Match "Parameters:" → match by source, pair
+  │   ├── Params insufficient → start paramBuffer continuation buffer
+  │   │   └── Each line: skip blank lines → append → re-parse until sufficient
+  │   └── Params sufficient → processSql() → manager.println()
   ├── Cleanup every 5s (expired entries >10s)
   └── Other lines: ignore
 
+handleContinuation(line)
+  ├── Terminator: Preparing/Parameters/<= line → flush buffer and process
+  │   ├── Process even when params insufficient (parseSql preserves remaining ?)
+  │   └── Preparing/Parameters terminators don't consume line (return false),
+  │   │       allowing the line to continue to normal matching
+  └── Continuation: append to paramBuffer → re-parse → process when sufficient
+
 parseSql(sql, params)
-  ├── Iterate '?' placeholders in SQL
-  ├── Take corresponding parameter from params queue
-  ├── String/Date types add single quotes: 'value'
-  └── Numeric types replace directly: value
+  ├── O(n) scan: iterate ? placeholders in SQL
+  ├── Take param from queue (preserves ? when queue empty)
+  ├── String/Date types get single quotes: 'value'
+  └── Numeric/null types replaced directly: value
 
 parseParams(line)
-  ├── Split "1(Long), 张三(String)"
-  └── Return Queue<Entry<value, type>>
+  ├── Remove all \r → trim whitespace
+  ├── Depth-tracking tokenizer:
+  │   ├── Split by comma only at depth=0 (outside parentheses)
+  │   ├── Separator detection: whitespace after comma contains space(0x20) or newline(\n)
+  │   ├── Correctly handles commas inside XML/JSON values (depth>0, no split)
+  │   ├── Identifies "(TypeName)" type markers, extracts value and type
+  │   └── Supports "null" keyword → (null, null)
+  └── Returns Queue<Entry<value, type>>
 ```
 
 **Key Design**:
 - **Map multi-source cache**: `ConcurrentHashMap<String, PendingSql>` for multi-thread concurrency
 - **10s timeout**: Auto-cleanup of expired Preparing entries
 - **ThreadLocal Matcher**: Avoid creating regex matchers per log line
-- **CopyOnWriteArrayList** for thread-safe keyword filtering
+- **Continuation buffer**: `paramBuffer` accumulates multi-line parameter values, skips blank lines, re-parses until complete
+- **Depth-tracking tokenizer**: Uses parenthesis depth to determine if a comma is a parameter separator, correctly handles XML/JSON values containing commas
+- **Flexible separator detection**: Comma followed by whitespace containing space(0x20) or newline(\n) is treated as separator, tolerating console line wrapping
+- **O(n) SQL restoration**: `parseSql` builds result via StringBuilder append, zero character movement overhead, preserves `?` when params insufficient
+- **Safe flush**: `handleContinuation` processes SQL even when params are insufficient on terminator, preventing SQL loss
 
 ---
 
@@ -401,10 +439,11 @@ Supports IDEA 2024.1 ~ 2026.2. Key API compatibility:
 
 ### 8.4 Edge Cases (Non-critical)
 
-- **parseParams comma split**: Parameter values containing `, ` will be incorrectly split, though MyBatis never outputs such parameters
+- **JSON internal commas**: If MyBatis outputs pretty-printed multi-line JSON, indentation spaces could be misidentified as separators. Currently JSON is typically output in compact single-line format, so risk is extremely low
 - **cleanupExpired weak consistency**: `ConcurrentHashMap` iterator may miss new entries during cleanup, but cleanup is inherently non-precise
 - **pendingSqls no capacity limit**: 10s timeout is sufficient as safety net
 - **Trim highlight scanning**: Full scan of highlights when exceeding 10000 lines, but triggered rarely
+- **`<==` terminator dependency**: When SQL params span multiple lines, `<==` result markers can pre-flush the buffer; if MyBatis config doesn't output `<==`, relies on new SQL's Preparing/Parameters or param accumulation completion path
 
 ---
 

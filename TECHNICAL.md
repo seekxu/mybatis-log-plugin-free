@@ -93,21 +93,37 @@ MyBatisLogConsoleFilter.applyFilter(line, length)
     │
     ├── 检查 MyBatisLogManager.isRunning()
     ├── 关键词过滤
-    ├── 匹配 "Preparing:" → 暂存 SQL 模板
-    ├── 匹配 "Parameters:" → 触发解析
+    ├── 匹配 "Preparing:" → 暂存 pendingSqls[source]
+    ├── 匹配 "Parameters:" → 按 source 匹配 → 触发解析
+    │
+    ├── [参数不足] → 启动 paramBuffer 续行缓冲，累积多行值 (XML/JSON)
+    │   └── 每行: 跳过空白行 → 追加到 paramBuffer → 重新解析
+    │
+    ├── [参数充足] → 调用 processSql()
     │
     ▼
 MyBatisLogConsoleFilter.parseParams(line)
-    │  解析 "张三(String), 1(Long)" → Queue<Entry<value, type>>
+    │  移除所有 \r → trim() 去首尾空白
+    │  深度追踪分词 (depth-tracking tokenizer):
+    │   → 按逗号分割，仅在 depth=0 (括号外) 时切分
+    │   → 分隔符检测: 逗号后空白序列含空格(0x20) 或 换行符 (\n) 即判定为参数分隔
+    │   → 容忍控制台换行打断分隔符: ",\n   " 或 ",\n" (逗号和空格跨行)
+    │   → 正确处理 XML/JSON 值内部的逗号 (depth>0 时不切分)
+    │   → 识别 "(TypeName)" 类型标记，提取值和类型
+    │   → 返回 Queue<Entry<值, 类型>>
     ▼
 MyBatisLogConsoleFilter.parseSql(sql, params)
-    │  用参数替换 ? 占位符
-    │  字符串/日期类型加单引号
+    │  O(n) 扫描: 直接构建新 StringBuilder (非 deleteCharAt/insert 位移)
+    │  遇到 ? 占位符 → 从 params 队列取参数 → 追加到结果
+    │  队列空时保留原 ? (防止参数不足导致错误 SQL)
+    │  String/Date 类型加单引号: 'value'
+    │  数字/null 类型直接替换
     ▼
 MyBatisLogManager.println(prefix, sql, rgb)
     │
     ├── 根据 SQL 类型确定颜色 (INSERT/DELETE/UPDATE/SELECT)
-    ├── 可选格式化 (BasicFormatter)
+    ├── 可选格式化 (BasicFormatter, Windows 下使用 System.lineSeparator())
+    ├── 换行符规范化: 移除所有 \r → 合并连续 \n → 防止双空行
     └── 输出到 ConsoleView
 ```
 
@@ -205,7 +221,8 @@ mybatis-log-plugin-free/
 | `run()` | 开始监听 MyBatis 日志 |
 | `stop()` | 停止监听 |
 | `resetCounter()` | 重置 SQL 序号计数器（清空时调用） |
-| `println(logPrefix, sql, rgb)` | 输出一条还原后的 SQL 到 ConsoleView，超过 10000 行时自动 trim 最旧 20% |
+| `println(logPrefix, sql, rgb)` | 输出还原后的 SQL 到 ConsoleView；换行符规范化 (移除 \r、合并连续 \n)；超过 10000 行时自动 trim 最旧 20% |
+| `debug(msg)` | 输出调试日志到 ConsoleView（`DEBUG` 开关控制，默认关闭），用于排查解析问题 |
 | `dispose()` | 清理资源（移除 Content、停止监听） |
 
 **重要设计决策**:
@@ -214,6 +231,7 @@ mybatis-log-plugin-free/
 - **构造函数中 `removeAllContents(true)`**: 确保重新打开面板时不会有残留内容
 - **`running = true` 在构造函数末尾**: 面板一打开即自动开始捕获日志
 - **`MAX_LINE_COUNT = 10000`**: 超过阈值时删除最旧 20% 行，保留最近 8000 行，防止内存泄漏
+- **换行符规范化**: `println` 输出前执行 `replace("\r", "").replaceAll("\\n{2,}", "\n")`，消除 Windows 下 BasicFormatter 使用 `System.lineSeparator()` 造成的 `\r\n\n` 双空行问题
 
 **线程安全**: 构造函数应在 EDT 调用。`println` 由 ConsoleFilter 调用，也需在 EDT 上。`keywords` 使用 `CopyOnWriteArrayList` 保证并发读写安全。
 
@@ -228,18 +246,33 @@ mybatis-log-plugin-free/
 applyFilter(line)
   ├── 提取 source（三级回退: logger 名 → [thread] → 完整前缀）
   ├── 匹配 "Preparing:" → 暂存 pendingSqls[source]
-  ├── 匹配 "Parameters:" → 按 source 匹配并配对，调用 manager.println()
+  ├── 匹配 "Parameters:" → 按 source 匹配并配对
+  │   ├── 参数不足 → 启动 paramBuffer 续行缓冲
+  │   │   └── 每行: 跳过空白行 → 追加 → 重新 parseParams 直到参数充足
+  │   └── 参数充足 → processSql() → manager.println()
   ├── 每 5s 清理一次过期 Preparing
   └── 其他行: 忽略
 
+handleContinuation(line)
+  ├── 终止条件: 遇到 Preparing/Parameters/<= 行 → flush 缓冲并处理
+  │   ├── flush 时参数不足也会处理 (parseSql 保留剩余 ?)
+  │   └── Preparing/Parameters 终止符不消费行 (返回 false)，让该行继续正常匹配
+  └── 续行: 追加到 paramBuffer → 重新 parseParams → 参数充足则处理
+
 parseSql(sql, params)
-  ├── 遍历 SQL 中的 '?' 占位符
-  ├── 从 params 队列中取对应参数
+  ├── O(n) 扫描: 遍历 SQL 中 ? 占位符
+  ├── 从 params 队列取参数 (队列空则保留 ?)
   ├── String/Date 类型加单引号: 'value'
-  └── 数字类型直接替换: value
+  └── 数字/null 类型直接替换: value
 
 parseParams(line)
-  ├── 分割 "1(Long), 张三(String)"
+  ├── 移除所有 \r → trim() 去首尾空白
+  ├── 深度追踪分词 (depth-tracking tokenizer):
+  │   ├── 按逗号分割，仅在 depth=0 (括号外) 时切分
+  │   ├── 分隔符检测: 逗号后空白序列含空格(0x20) 或 换行符(\n)
+  │   ├── 正确处理 XML/JSON 值内部的逗号 (depth>0 时不切分)
+  │   ├── 识别 "(TypeName)" 类型标记，提取值和类型
+  │   └── 支持 "null" 关键字 → (null, null)
   └── 返回 Queue<Entry<值, 类型>>
 ```
 
@@ -247,6 +280,11 @@ parseParams(line)
 - **Map 多源缓存**: `ConcurrentHashMap<String, PendingSql>` 按 source 缓存多条 Preparing，支持多线程交错
 - **10 秒超时**: `PendingSql` 携带时间戳，超时自动清理，防止内存泄漏
 - **ThreadLocal 复用 Matcher**: 避免每行日志创建新正则对象
+- **续行缓冲**: `paramBuffer` 累积多行参数值，每行跳过空白行，累积后重新解析
+- **深度追踪分词**: 用括号深度 (depth) 判断逗号是否为参数分隔符，正确处理含逗号的 XML/JSON 值
+- **弹性分隔符检测**: 逗号后空白序列含空格(0x20)或换行符(`\n`)即判定为参数分隔，容忍控制台换行打断
+- **O(n) SQL 还原**: `parseSql` 使用 StringBuilder append 构建结果，零字符移动开销，参数不足时保留 `?`
+- **安全 flush**: `handleContinuation` 遇到终止符时即使参数不足也会处理，防止 SQL 丢失
 
 **常量 Key** (用于 PropertiesComponent 持久化):
 - `PREPARING_KEY` — Preparing 前缀
@@ -523,10 +561,11 @@ com.starxg.mybatislog.gui.SettingsDialogWrapper
 
 ### 9.5 边界情况（不影响正常使用）
 
-- **parseParams 逗号分隔**: 参数值含 `, ` 时会被错误分割，但 MyBatis 实际不会输出此类参数
+- **JSON 内部逗号**: 若 MyBatis 输出格式化（pretty print）的多行 JSON，缩进空格可能被误判为分隔符。目前 JSON 通常以紧凑单行输出，风险极低
 - **cleanupExpired 弱一致性**: `ConcurrentHashMap` 迭代器可能漏掉新增条目，但清理本身就是非精确操作
 - **pendingSqls 无容量上限**: 极端堆积场景，已有 10 秒超时兜底
 - **trim 高亮扫描**: 超过 10000 行会全量扫描高亮标记，但触发频率极低
+- **`<==` 终止符依赖**: 当 SQL 参数跨多行时，`<==` 结果标记可提前 flush 缓冲；若 MyBatis 配置不输出 `<==`，则依赖新 SQL 的 Preparing/Parameters 或参数累积完成路径
 
 ---
 

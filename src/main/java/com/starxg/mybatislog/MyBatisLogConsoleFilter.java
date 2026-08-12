@@ -52,6 +52,10 @@ public class MyBatisLogConsoleFilter implements Filter {
 
     private volatile long lastCleanupTime = 0;
 
+    // Buffer for multi-line parameter values (e.g., XML/JSON spanning multiple console lines)
+    private String pendingParamSource = null;
+    private StringBuilder paramBuffer = null;
+
     static {
         Set<String> types = new HashSet<>(8);
         types.add("String");
@@ -107,6 +111,8 @@ public class MyBatisLogConsoleFilter implements Filter {
             for (String keyword : keywords) {
                 if (line.contains(keyword)) {
                     pendingSqls.clear();
+                    pendingParamSource = null;
+                    paramBuffer = null;
                     return null;
                 }
             }
@@ -114,6 +120,13 @@ public class MyBatisLogConsoleFilter implements Filter {
 
         // Clean up expired entries
         cleanupExpired();
+
+        // Handle parameter continuation (multi-line values like XML/JSON)
+        if (pendingParamSource != null) {
+            if (handleContinuation(line, manager, preparing, parameters)) {
+                return null;
+            }
+        }
 
         // Extract log source from line
         final String lineSource = extractSource(line, preparing, parameters);
@@ -126,44 +139,110 @@ public class MyBatisLogConsoleFilter implements Filter {
 
         // Handle Parameters line - match with cached Preparing
         if (line.contains(parameters)) {
-            final PendingSql pending = pendingSqls.remove(lineSource);
+            final PendingSql pending = pendingSqls.get(lineSource);
             if (pending == null) {
                 return null;
             }
 
-            final String wholeSql = parseSql(
-                    StringUtils.substringAfter(pending.sqlLine, preparing),
-                    parseParams(StringUtils.substringAfter(line, parameters))
-            ).toString();
+            final String paramsContent = StringUtils.substringAfter(line, parameters);
+            final Queue<Map.Entry<String, String>> params = parseParams(paramsContent);
 
-            final String key;
-            if (StringUtils.startsWithIgnoreCase(wholeSql, "insert")) {
-                key = INSERT_SQL_COLOR_KEY;
-            } else if (StringUtils.startsWithIgnoreCase(wholeSql, "delete")) {
-                key = DELETE_SQL_COLOR_KEY;
-            } else if (StringUtils.startsWithIgnoreCase(wholeSql, "update")) {
-                key = UPDATE_SQL_COLOR_KEY;
-            } else if (StringUtils.startsWithIgnoreCase(wholeSql, "select")
-                    || StringUtils.startsWithIgnoreCase(wholeSql, "with")
-                    || StringUtils.startsWithIgnoreCase(wholeSql, "explain")) {
-                key = SELECT_SQL_COLOR_KEY;
-            } else {
-                key = "unknown";
+            if (params.size() < countPlaceholders(pending, preparing)) {
+                // Not enough params yet - may be multi-line value
+                pendingParamSource = lineSource;
+                paramBuffer = new StringBuilder(paramsContent.trim());
+                return null;
             }
 
-            final String logPrefix = StringUtils.substringBefore(pending.sqlLine, preparing);
-            manager.println(logPrefix, wholeSql,
-                    PropertiesComponent.getInstance(project).getInt(key,
-                            ConsoleViewContentType.ERROR_OUTPUT.getAttributes().getForegroundColor().getRGB()));
+            // Have all params, process immediately
+            pendingSqls.remove(lineSource);
+            processSql(pending, params, manager, preparing);
         }
 
         return null;
     }
 
     /**
-     * Remove expired Preparing entries to prevent memory leaks.
-     * Throttled to run at most once per CLEANUP_INTERVAL_MS.
+     * Process matched Preparing and Parameters to restore the complete SQL.
      */
+    private void processSql(PendingSql pending, Queue<Map.Entry<String, String>> params,
+                            MyBatisLogManager manager, String preparing) {
+        final String wholeSql = parseSql(
+                StringUtils.substringAfter(pending.sqlLine, preparing),
+                params
+        ).toString();
+
+        final String key;
+        if (StringUtils.startsWithIgnoreCase(wholeSql, "insert")) {
+            key = INSERT_SQL_COLOR_KEY;
+        } else if (StringUtils.startsWithIgnoreCase(wholeSql, "delete")) {
+            key = DELETE_SQL_COLOR_KEY;
+        } else if (StringUtils.startsWithIgnoreCase(wholeSql, "update")) {
+            key = UPDATE_SQL_COLOR_KEY;
+        } else if (StringUtils.startsWithIgnoreCase(wholeSql, "select")
+                || StringUtils.startsWithIgnoreCase(wholeSql, "with")
+                || StringUtils.startsWithIgnoreCase(wholeSql, "explain")) {
+            key = SELECT_SQL_COLOR_KEY;
+        } else {
+            key = "unknown";
+        }
+
+        final String logPrefix = StringUtils.substringBefore(pending.sqlLine, preparing);
+        manager.println(logPrefix, wholeSql,
+                PropertiesComponent.getInstance(project).getInt(key,
+                        ConsoleViewContentType.ERROR_OUTPUT.getAttributes().getForegroundColor().getRGB()));
+    }
+
+    /**
+     * Count the number of '?' placeholders in a pending SQL template.
+     */
+    private int countPlaceholders(PendingSql pending, String preparing) {
+        return StringUtils.countMatches(StringUtils.substringAfter(pending.sqlLine, preparing), "?");
+    }
+
+    /**
+     * Handle parameter continuation buffer for multi-line values (XML/JSON).
+     * Returns true if the line was consumed (handled), false to fall through to normal processing.
+     */
+    private boolean handleContinuation(String line, MyBatisLogManager manager,
+                                       String preparing, String parameters) {
+        // Terminator: new SQL starts or MyBatis result marker — flush and process
+        if (line.contains(preparing) || line.contains(parameters)
+                || line.contains("<==")) {
+            final PendingSql pending = pendingSqls.get(pendingParamSource);
+            if (pending != null && !pending.isExpired()) {
+                final Queue<Map.Entry<String, String>> parsed = parseParams(paramBuffer.toString());
+                pendingSqls.remove(pendingParamSource);
+                processSql(pending, parsed, manager, preparing);
+            } else {
+                pendingSqls.remove(pendingParamSource);
+            }
+            pendingParamSource = null;
+            paramBuffer = null;
+            return line.contains("<==");
+        }
+
+        // Continuation data: accumulate and re-check param count
+        final PendingSql pending = pendingSqls.get(pendingParamSource);
+        if (pending == null || pending.isExpired()) {
+            pendingParamSource = null;
+            paramBuffer = null;
+        } else {
+            if (StringUtils.isNotBlank(line)) {
+                paramBuffer.append('\n').append(line);
+            }
+            final Queue<Map.Entry<String, String>> parsed = parseParams(paramBuffer.toString());
+            if (parsed.size() >= countPlaceholders(pending, preparing)) {
+                pendingSqls.remove(pendingParamSource);
+                pendingParamSource = null;
+                paramBuffer = null;
+                processSql(pending, parsed, manager, preparing);
+            }
+            return true;
+        }
+        return false;
+    }
+
     private void cleanupExpired() {
         final long now = System.currentTimeMillis();
         if (now - lastCleanupTime < CLEANUP_INTERVAL_MS) {
@@ -236,48 +315,110 @@ public class MyBatisLogConsoleFilter implements Filter {
     }
 
     static StringBuilder parseSql(String sql, Queue<Map.Entry<String, String>> params) {
+        final StringBuilder sb = new StringBuilder(sql.length() + 32);
 
-        final StringBuilder sb = new StringBuilder(sql);
-
-        for (int i = 0; i < sb.length(); i++) {
-            if (sb.charAt(i) != MARK) {
+        for (int i = 0; i < sql.length(); i++) {
+            if (sql.charAt(i) != MARK) {
+                sb.append(sql.charAt(i));
                 continue;
             }
 
             final Map.Entry<String, String> entry = params.poll();
-            if (Objects.isNull(entry)) {
+            if (entry == null) {
+                sb.append(MARK);
                 continue;
             }
 
-
-            sb.deleteCharAt(i);
-
             if (NEED_BRACKETS.contains(entry.getValue())) {
-                sb.insert(i, String.format("'%s'", entry.getKey()));
+                sb.append('\'').append(entry.getKey()).append('\'');
             } else {
-                sb.insert(i, entry.getKey());
+                sb.append(entry.getKey());
             }
-
-
         }
 
         return sb;
     }
 
     static Queue<Map.Entry<String, String>> parseParams(String line) {
-        line = StringUtils.removeEnd(line, "\n");
+        // Remove all \r (Windows CRLF normalization) and strip leading/trailing whitespace
+        line = StringUtils.remove(line, '\r').trim();
 
-        final String[] strings = StringUtils.splitByWholeSeparator(line, ", ");
-        final Queue<Map.Entry<String, String>> queue = new ArrayDeque<>(strings.length);
+        // Left-to-right tokenization: split by separator at depth 0.
+        // The separator is a depth-0 comma followed by whitespace (any sequence of spaces/newlines/tabs)
+        // that contains at least one space OR newline. This matches MyBatis's ", " parameter separator
+        // even when the console wraps the comma and the space across different lines (",\n   ") or
+        // when the comma is at end of a line with no trailing space (",\n").
+        // It also safely ignores commas inside values (XML/JSON) where commas are not followed
+        // by a space/newline-containing whitespace sequence in this way.
+        final List<String> tokens = new ArrayList<>();
+        int depth = 0;
+        int tokenStart = 0;
 
-        for (String s : strings) {
-            String value = StringUtils.substringBeforeLast(s, "(");
-            String type = StringUtils.substringBetween(s, "(", ")");
-            if (StringUtils.isEmpty(type)) {
-                queue.offer(new AbstractMap.SimpleEntry<>(value, null));
-            } else {
-                queue.offer(new AbstractMap.SimpleEntry<>(value, type));
+        for (int i = 0; i < line.length(); i++) {
+            final char c = line.charAt(i);
+            if (c == '(') {
+                depth++;
+            } else if (c == ')') {
+                depth--;
+            } else if (depth == 0 && c == ',') {
+                // Scan forward after the comma: collect whitespace chars; stop at non-whitespace.
+                // If the whitespace run contains at least one ' ' (space) or '\n' (newline),
+                // treat as separator. Newline alone is valid because console line-wraps always
+                // separate parameters, never values (XML/JSON internal newlines don't follow commas).
+                int j = i + 1;
+                boolean hasSpace = false;
+                while (j < line.length()) {
+                    final char wc = line.charAt(j);
+                    if (wc == ' ' || wc == '\n' || wc == '\t') {
+                        if (wc == ' ' || wc == '\n') hasSpace = true;
+                        j++;
+                    } else {
+                        break;
+                    }
+                }
+                // Also accept a comma directly followed by end-of-input (trailing comma after last param)
+                if (hasSpace || j == line.length()) {
+                    tokens.add(line.substring(tokenStart, i).trim());
+                    i = j - 1; // loop will i++ to j, right after the whitespace run
+                    tokenStart = j;
+                }
             }
+        }
+        // Last token
+        if (tokenStart < line.length()) {
+            tokens.add(line.substring(tokenStart).trim());
+        }
+
+        // Parse each token into (value, type)
+        final Queue<Map.Entry<String, String>> queue = new ArrayDeque<>(tokens.size());
+        for (String token : tokens) {
+            if (token.isEmpty()) continue;
+
+            if (token.equals("null")) {
+                queue.offer(new AbstractMap.SimpleEntry<>("null", null));
+                continue;
+            }
+
+            // Extract type from "(TypeName)" at the end
+            final int closeParen = token.lastIndexOf(')');
+            if (closeParen >= 0 && closeParen == token.length() - 1) {
+                final int openParen = token.lastIndexOf('(', closeParen - 1);
+                if (openParen >= 0) {
+                    final String typeName = token.substring(openParen + 1, closeParen);
+                    // Type name should be a simple identifier (no commas or parens)
+                    if (!typeName.contains(",") && !typeName.contains("(") && !typeName.contains(")")) {
+                        String value = token.substring(0, openParen).trim();
+                        if (value.endsWith(",")) {
+                            value = value.substring(0, value.length() - 1).trim();
+                        }
+                        queue.offer(new AbstractMap.SimpleEntry<>(value, typeName.isEmpty() ? null : typeName));
+                        continue;
+                    }
+                }
+            }
+
+            // Fallback: no recognizable type marker
+            queue.offer(new AbstractMap.SimpleEntry<>(token, null));
         }
 
         return queue;
