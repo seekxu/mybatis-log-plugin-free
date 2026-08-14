@@ -26,7 +26,15 @@ Supports IntelliJ IDEA **2024.1 ~ 2026.2**.
 
 ## Installation
 
-This plugin is **NOT published on JetBrains Marketplace**. Download the built `.jar` from GitHub Releases and install manually:
+### Option 1: Install from Marketplace
+
+1. Open IDEA: **File → Settings → Plugins → Marketplace**
+2. Search for **MyBatis Log Restorer**
+3. Click **Install**, restart IDEA
+
+Or visit the plugin marketplace page directly: [plugins.jetbrains.com/plugin/33543](https://plugins.jetbrains.com/plugin/33543-mybatis-log-restorer)
+
+### Option 2: Install from GitHub Releases
 
 1. Go to [Releases](https://github.com/seekxu/mybatis-log-plugin-free/releases) and download the latest `.jar`
 2. Open IDEA: **File → Settings → Plugins → ⚙ → Install Plugin from Disk...**

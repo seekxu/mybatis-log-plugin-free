@@ -25,7 +25,15 @@
 
 ## 安装
 
-本插件 **未发布到 JetBrains Marketplace**。请从 GitHub Releases 下载构建产物后手动安装：
+### 方式一：从插件市场安装
+
+1. 打开 IDEA: **File → Settings → Plugins → Marketplace**
+2. 搜索 **MyBatis Log Restorer**
+3. 点击 **Install**，重启 IDEA 即可
+
+也可直接访问插件市场页面：[plugins.jetbrains.com/plugin/33543](https://plugins.jetbrains.com/plugin/33543-mybatis-log-restorer)
+
+### 方式二：从 GitHub Releases 安装
 
 1. 前往 [Releases](https://github.com/seekxu/mybatis-log-plugin-free/releases) 下载最新版本的 `.jar` 文件
 2. 打开 IDEA: **File → Settings → Plugins → ⚙ → Install Plugin from Disk...**
