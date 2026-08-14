@@ -1,5 +1,5 @@
 <idea-plugin>
-	<id>com.seekxu.mybatis-log-plugin-free</id>
+	<id>com.seekxu.mybatis-log-restorer</id>
 	<name>MyBatis Log Restorer</name>
 
 	<vendor email="contact@seekxu.com" url="http://github.com/seekxu">seekxu</vendor>

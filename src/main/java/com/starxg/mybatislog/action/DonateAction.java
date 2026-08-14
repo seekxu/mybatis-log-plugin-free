@@ -1,7 +1,7 @@
 package com.starxg.mybatislog.action;
 
 import com.intellij.ide.plugins.IdeaPluginDescriptor;
-import com.intellij.ide.plugins.PluginManagerCore;
+import com.intellij.ide.plugins.PluginManager;
 import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
@@ -19,7 +19,7 @@ import java.util.Objects;
  */
 public class DonateAction extends AnAction {
 
-    private static final String PLUGIN_ID = "com.seekxu.mybatis-log-plugin-free";
+    private static final String PLUGIN_ID = "com.seekxu.mybatis-log-restorer";
 
     private volatile boolean isVisible;
 
@@ -57,7 +57,7 @@ public class DonateAction extends AnAction {
 
     @NotNull
     private static String getVersion() {
-        @Nullable IdeaPluginDescriptor plugin = PluginManagerCore.getPlugin(PluginId.getId(PLUGIN_ID));
+        @Nullable IdeaPluginDescriptor plugin = PluginManager.getPlugin(PluginId.getId(PLUGIN_ID));
         if (plugin != null) {
             return plugin.getVersion();
         }
