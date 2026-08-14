@@ -13,7 +13,7 @@
 	<ol>
 		<li>Click the MyBatis Log Restorer icon in the bottom tool window</li>
 	</ol>
-    <a href="https://github.com/seekxu/mybatis-log-plugin-free">github</a> | <a href="https://github.com/seekxu/mybatis-log-plugin-free/issues">issues</a> | <a href="https://ko-fi.com/seekxu">donate</a>
+    <a href="https://github.com/seekxu/mybatis-log-restorer">github</a> | <a href="https://github.com/seekxu/mybatis-log-restorer/issues">issues</a> | <a href="https://ko-fi.com/seekxu">donate</a>
     ]]></description>
 
 	<depends>com.intellij.modules.platform</depends>
