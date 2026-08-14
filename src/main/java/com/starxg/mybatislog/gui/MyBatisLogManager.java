@@ -56,7 +56,7 @@ public class MyBatisLogManager implements Disposable {
 
     private static final Key<MyBatisLogManager> KEY = Key.create(MyBatisLogManager.class.getName());
     private static final BasicFormatter FORMATTER = new BasicFormatter();
-    private static final String TOOL_WINDOW_ID = "MyBatis Log Plugin Free";
+    private static final String TOOL_WINDOW_ID = "MyBatis Log Restorer";
     private static final int MAX_LINE_COUNT = 10_000; // clear console when exceeding this threshold
 
     private final Map<Integer, ConsoleViewContentType> consoleViewContentTypes = new ConcurrentHashMap<>();

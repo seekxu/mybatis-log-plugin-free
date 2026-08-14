@@ -1,10 +1,10 @@
-# MyBatis Log Plugin Free
+# MyBatis Log Restorer
 
 [**中文**](README.md) | [**English**](README_EN.md)
 
 > Forked from [starxg/mybatis-log-plugin-free](https://github.com/starxg/mybatis-log-plugin-free), refactored with independent ToolWindow architecture. Supports IDEA 2024.1 - 2026.2.
 
-An IntelliJ IDEA plugin that restores MyBatis framework's separated SQL logs into complete executable SQL statements, displayed in an independent tool window at the bottom of IDEA.
+An IntelliJ IDEA plugin that intercepts MyBatis `Preparing` and `Parameters` console logs and reconstructs them into complete executable SQL statements. Features multi-thread concurrency support, XML/JSON multi-line parameter handling, broad log format compatibility, and a standalone bottom ToolWindow.
 
 ## Features
 
@@ -34,7 +34,7 @@ This plugin is **NOT published on JetBrains Marketplace**. Download the built `.
 
 ## Usage
 
-After installation, the **MyBatis Log Free** icon will appear in IDEA's bottom toolbar. Click the icon to open the panel, and the plugin will automatically start capturing MyBatis SQL logs.
+After installation, the **MyBatis Log Restorer** icon will appear in IDEA's bottom toolbar. Click the icon to open the panel, and the plugin will automatically start capturing MyBatis SQL logs.
 
 ## Build
 

@@ -1,4 +1,4 @@
-# MyBatis Log Plugin Free — Technical Documentation
+# MyBatis Log Restorer — Technical Documentation
 
 ---
 
@@ -6,7 +6,7 @@
 
 | Attribute | Value |
 |---|---|
-| **Project Name** | MyBatis Log Free |
+| **Project Name** | MyBatis Log Restorer |
 | **Type** | IntelliJ IDEA Platform Plugin |
 | **Plugin ID** | `com.seekxu.mybatis-log-plugin-free` |
 | **Version** | 2.0.0 |
@@ -66,7 +66,7 @@ Displayed in an independent tool window at IDEA's bottom panel, with syntax high
 │                                            │                 │
 │                                            ▼                 │
 │  ┌─────────────────────────────────────────────────────┐    │
-│  │           ToolWindow "MyBatis Log Plugin Free"       │    │
+│  │           ToolWindow "MyBatis Log Restorer"          │    │
 │  │  ┌────────────────────────────────────────────────┐  │    │
 │  │  │  ActionToolbar  │  ConsoleView (SQL Display)   │  │    │
 │  │  │  ┌────────────┐│  ┌────────────────────────┐  │  │    │
@@ -301,7 +301,7 @@ Registers `ConsoleFilterProvider` with IDEA, enabling `MyBatisLogConsoleFilter` 
 
 **File**: `src/main/java/com/starxg/mybatislog/gui/MyBatisLogToolWindowFactory.java`
 
-ToolWindow factory. When user clicks "MyBatis Log Free" icon, IDEA calls `createToolWindowContent`. First call creates `MyBatisLogManager`, subsequent calls return (idempotent).
+ToolWindow factory. When user clicks "MyBatis Log Restorer" icon, IDEA calls `createToolWindowContent`. First call creates `MyBatisLogManager`, subsequent calls return (idempotent).
 
 ### 4.5 MyBatisLogAction (Entry Action)
 
@@ -344,7 +344,7 @@ actionPerformed()
     <consoleFilterProvider implementation="com.starxg.mybatislog.MyBatisLogConsoleFilterProvider"/>
 
     <!-- 2. Tool window: fixed at bottom, click icon to open -->
-    <toolWindow id="MyBatis Log Plugin Free"
+    <toolWindow id="MyBatis Log Restorer"
                 anchor="bottom"
                 icon="/icons/ibatis.svg"
                 factoryClass="com.starxg.mybatislog.gui.MyBatisLogToolWindowFactory"/>

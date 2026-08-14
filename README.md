@@ -1,10 +1,10 @@
-# MyBatis Log Plugin Free
+# MyBatis Log Restorer
 
 [**中文**](README.md) | [**English**](README_EN.md)
 
 > 基于 [starxg/mybatis-log-plugin-free](https://github.com/starxg/mybatis-log-plugin-free) 重构，采用独立 ToolWindow 架构，支持 IDEA 2024.1 - 2026.2。
 
-一个 IntelliJ IDEA 插件，用于将 MyBatis 框架输出的分离式 SQL 日志还原为完整的可执行 SQL 语句，并在 IDEA 底部的独立工具窗口中展示。
+一个 IntelliJ IDEA 插件，拦截 MyBatis 框架输出的 `Preparing` 和 `Parameters` 日志，还原为完整的可执行 SQL 语句。支持多线程日志交错、XML/JSON 大参数续行、多种日志格式适配，底部独立面板展示。
 
 ## 功能
 
@@ -33,7 +33,7 @@
 
 ## 使用
 
-安装后，IDEA 底部工具栏会出现 **MyBatis Log Free** 图标。点击图标打开面板，插件会自动开始捕获 MyBatis SQL 日志。
+安装后，IDEA 底部工具栏会出现 **MyBatis Log Restorer** 图标。点击图标打开面板，插件会自动开始捕获 MyBatis SQL 日志。
 
 ## 构建
 

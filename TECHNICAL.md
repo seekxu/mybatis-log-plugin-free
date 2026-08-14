@@ -1,4 +1,4 @@
-# MyBatis Log Plugin Free — 技术文档
+# MyBatis Log Restorer — 技术文档
 
 ---
 
@@ -6,7 +6,7 @@
 
 | 属性 | 值 |
 |---|---|
-| **项目名称** | MyBatis Log Free |
+| **项目名称** | MyBatis Log Restorer |
 | **项目类型** | IntelliJ IDEA 平台插件 |
 | **插件 ID** | `com.seekxu.mybatis-log-plugin-free` |
 | **版本** | 2.0.0 |
@@ -64,7 +64,7 @@ UPDATE mp_user SET name='张三' WHERE id=1
 │                                            │                 │
 │                                            ▼                 │
 │  ┌─────────────────────────────────────────────────────┐    │
-│  │           ToolWindow "MyBatis Log Plugin Free"       │    │
+│  │           ToolWindow "MyBatis Log Restorer"          │    │
 │  │  ┌────────────────────────────────────────────────┐  │    │
 │  │  │  ActionToolbar  │  ConsoleView (SQL Display)   │  │    │
 │  │  │  ┌────────────┐│  ┌────────────────────────┐  │  │    │
@@ -308,7 +308,7 @@ String, Date, Time, LocalDate, LocalTime, LocalDateTime, BigDecimal, Timestamp
 
 **文件**: `src/main/java/com/starxg/mybatislog/gui/MyBatisLogToolWindowFactory.java`
 
-**职责**: ToolWindow 工厂。当用户点击底部 "MyBatis Log Free" 图标时，IDEA 调用 `createToolWindowContent`。首次调用时创建 `MyBatisLogManager`，后续调用直接返回（幂等）。
+**职责**: ToolWindow 工厂。当用户点击底部 "MyBatis Log Restorer" 图标时，IDEA 调用 `createToolWindowContent`。首次调用时创建 `MyBatisLogManager`，后续调用直接返回（幂等）。
 
 ### 4.5 MyBatisLogAction (入口动作)
 
@@ -351,7 +351,7 @@ actionPerformed()
     <consoleFilterProvider implementation="com.starxg.mybatislog.MyBatisLogConsoleFilterProvider"/>
 
     <!-- 2. 工具窗口: 底部固定, 点击图标打开 -->
-    <toolWindow id="MyBatis Log Plugin Free"
+    <toolWindow id="MyBatis Log Restorer"
                 anchor="bottom"
                 icon="/icons/ibatis.svg"
                 factoryClass="com.starxg.mybatislog.gui.MyBatisLogToolWindowFactory"/>
